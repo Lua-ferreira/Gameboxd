@@ -5,6 +5,9 @@
 #include <QWidget>
 #include <QDialog>
 #include <QVector>
+#include <QComboBox>
+#include <QPushButton>
+#include <QMouseEvent>
 #include "grafo.h"
 #include "usuario.h"
 
@@ -15,7 +18,6 @@ public:
     int gameId;
     QString title;
 
-    // Construtor
     GameCard(int id, QString nome, QString colorHex, QWidget* parent = nullptr);
 
 signals:
@@ -29,7 +31,6 @@ protected:
 class MatchDialog : public QDialog {
     Q_OBJECT
 public:
-    // Recebe ponteiro para o Grafo para poder fazer a busca
     MatchDialog(int gameId, QString gameName, Grafo* g, QWidget* parent = nullptr);
 };
 
@@ -45,7 +46,7 @@ public slots:
     void abrirMatch(int id, QString nome);
 
 private:
-    Grafo* grafoSistema; // O grafo fica vivo aqui dentro
+    Grafo* grafoSistema; // Instância principal do Grafo
 };
 
 #endif // MAINWINDOW_H

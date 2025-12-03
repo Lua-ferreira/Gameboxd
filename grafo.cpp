@@ -2,11 +2,12 @@
 #include <QtMath>
 #include <QDebug>
 #include <limits> // Para usar inteiros maximos/minimos
+#include <algorithm>
 
 Grafo::Grafo() {}
 
 void Grafo::adicionarUsuario(const Usuario& user) {
-    bancoUsuarios.insert(user.getId(), user);
+    bancoUsuarios.insert(user.getId(), user); // Insere e usa a ID do usuario como chave
 }
 
 void Grafo::criarConexoes() {
@@ -22,7 +23,7 @@ void Grafo::criarConexoes() {
             int peso = calcularAfinidade(u1, u2);
 
             // Só cria aresta se tiver afinidade mínima (Threshold)
-            if (peso > 75) {
+            if (peso > 25) {
                 adjacencia[u1.getId()].push_back(qMakePair(u2.getId(), peso));
                 adjacencia[u2.getId()].push_back(qMakePair(u1.getId(), peso));
             }
@@ -31,30 +32,43 @@ void Grafo::criarConexoes() {
 }
 
 int Grafo::calcularAfinidade(const Usuario& a, const Usuario& b) {
-    int score = 0;
+    double score = 0;
 
-    // 1. Afinidade por Categorias
-    QSet<int> intersecao = a.categoriasFavoritas;
-    intersecao.intersect(b.categoriasFavoritas);
-    score += intersecao.size() * 10;
-
-    // 2. Afinidade por Avaliações (Logica de estrelas)
+    // 1. Afinidade por Jogos e Ratings (peso 40)
     QList<int> jogosA = a.jogosAvaliados.keys();
+    double scoreTemp = 0;
+    int jogosComum = 0;
     for (int gId : jogosA) {
         if (b.jogosAvaliados.contains(gId)) {
-            int notaA = a.getAvaliacao(gId);
-            int notaB = b.getAvaliacao(gId);
-            // Quanto menor a diferença, maior a pontuação
-            score += (5 - qAbs(notaA - notaB)) * 15;
+            jogosComum++;
+            double notaA = a.getAvaliacao(gId);
+            double notaB = b.getAvaliacao(gId);
+
+            scoreTemp += (5 - qAbs(notaA - notaB));
         }
     }
+    if (jogosComum >0) scoreTemp /= jogosComum;
+    if (jogosComum > 10) jogosComum = 10;
+    score += (scoreTemp * jogosComum) * 0.8;
 
-    // 3. Afinidade por Idade
+    // 2. Afinidade por Categorias (peso 20)
+    QSet<int> intersecaoC = a.categoriasFavoritas;
+    intersecaoC.intersect(b.categoriasFavoritas);
+    score += intersecaoC.size() * 20;
+
+    // 2. Afinidade por Mecanicas (peso 20)
+    QSet<int> intersecaoM = a.mecanicasFavoritas;
+    intersecaoM.intersect(b.mecanicasFavoritas);
+    score += intersecaoM.size() * 20;
+
+    // 3. Afinidade por Idade (peso 20)
     int diff = qAbs(a.getIdade() - b.getIdade());
-    if (diff <= 5) score += 20;
-    else if (diff > 20) score -= 10;
+    if (diff > 60) diff = 60;
+    score += 20 - (diff/3);
 
-    return score;
+    if (score == 100) score = 99;
+
+    return (int)score;
 }
 
 // ---------------------------------------------------------
@@ -62,18 +76,14 @@ int Grafo::calcularAfinidade(const Usuario& a, const Usuario& b) {
 // ---------------------------------------------------------
 QVector<Usuario> Grafo::buscarCandidatos(int gameId) {
     QVector<Usuario> candidatos;
-
     // Itera sobre todos os usuários do banco
     for (auto user : bancoUsuarios) {
-        // Regra de Negócio:
         // Só queremos pessoas que avaliaram o jogo com 3 estrelas ou mais.
-        // (Ou seja, pessoas que gostam do jogo e sabem jogar)
         if (user.getAvaliacao(gameId) >= 3) {
             candidatos.push_back(user);
         }
     }
 
-    // Se quiser ordenar os candidatos por "Experiência" ou Idade, faria aqui.
     return candidatos;
 }
 
@@ -115,10 +125,12 @@ QString Grafo::gerarMST(const QVector<Usuario>& grupo) {
         // Se tem pai, adiciona ao texto (formato da aresta)
         if (pai[u] != -1) {
             int pesoReal = calcularAfinidade(grupo[pai[u]], grupo[u]);
-            resultado += QString("%1 --(%2)--> %3\n")
-                         .arg(grupo[pai[u]].getNome())
-                         .arg(pesoReal)
-                         .arg(grupo[u].getNome());
+            if (pesoReal >= 25) {
+                resultado += QString("%1 --(%2)--> %3\n")
+                             .arg(grupo[pai[u]].getNome())
+                             .arg(pesoReal)
+                             .arg(grupo[u].getNome());
+            }
         }
 
         // 2. Atualizar os vizinhos do vértice escolhido 'u'
@@ -137,4 +149,62 @@ QString Grafo::gerarMST(const QVector<Usuario>& grupo) {
     }
 
     return resultado;
+}
+
+QVector<Usuario> Grafo::formarParty(QString hostId, int gameId, int tamanhoGrupo) {
+    // 1. Pega todo mundo que joga o jogo (Candidatos Brutos)
+    QVector<Usuario> todosCandidatos = buscarCandidatos(gameId);
+
+    QVector<Usuario> party;
+    Usuario host;
+    bool hostEncontrado = false;
+
+    // 2. Separa o Host dos Candidatos
+    for (int i = 0; i < todosCandidatos.size(); ++i) {
+        if (todosCandidatos[i].getId() == hostId) {
+            host = todosCandidatos[i];
+            todosCandidatos.removeAt(i);
+            hostEncontrado = true;
+            break;
+        }
+    }
+
+    // Se o host não joga o jogo, busca no banco geral
+    if (!hostEncontrado) {
+        if (bancoUsuarios.contains(hostId)) {
+            host = bancoUsuarios.value(hostId);
+        } else {
+            return party; // Host não existe
+        }
+    }
+
+    // O Host é o primeiro da Party
+    party.push_back(host);
+
+    // 3. Ordenar os candidatos pela afinidade com o Host (Do maior para o menor)
+    std::sort(todosCandidatos.begin(), todosCandidatos.end(),
+              [this, &host](const Usuario& a, const Usuario& b) {
+        return calcularAfinidade(host, a) > calcularAfinidade(host, b);
+    });
+
+    // 4. Preencher as vagas restantes COM "CERCA ELÉTRICA"
+    //int vagasRestantes = tamanhoGrupo - 1;
+
+    for (const Usuario& candidato : todosCandidatos) {
+        // Se já preencheu todas as vagas, para.
+        if (party.size() >= tamanhoGrupo) break;
+
+        // --- AQUI ESTÁ O FILTRO ---
+        int afinidade = calcularAfinidade(host, candidato);
+
+        // Se a afinidade for menor que 40, NINGUÉM MAIS ENTRA.
+        // Como a lista está ordenada, os próximos seriam piores ainda.
+        if (afinidade < 25) {
+            break;
+        }
+
+        party.push_back(candidato);
+    }
+
+    return party;
 }

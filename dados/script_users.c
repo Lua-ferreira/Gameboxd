@@ -49,7 +49,7 @@ const char* NOMES[] = {
     "Ana", "Bruno", "Carlos", "Daniela", "Eduardo", "Fernanda", "Gabriel", "Helena",
     "Iago", "Julia", "Lucas", "Mariana", "Nicolas", "Olivia", "Pietra", "Rafaela",
     "Samuel", "Tatiane", "Vitor", "Yasmin", "Felipe", "Larissa", "Gustavo", "Beatriz",
-    "Andressa", "Luana", "Giovany", "Raphael", "Marcelo", "Rodrig", "Pedro", "Clara",
+    "Andressa", "Luana", "Giovany", "Raphael", "Marcelo", "Rodrigo", "Pedro", "Clara",
     "Isabela", "Henrique", "Heitor", "Arthur", "Murilo", "Thauan", "Bruno", "Emily"
 };
 int TOTAL_NOMES = 40;

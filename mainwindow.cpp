@@ -8,6 +8,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QDebug>
+#include <QCoreApplication>
+#include <QDir>
 
 // Includes UI Manual
 #include <QGridLayout>
@@ -19,6 +21,7 @@
 #include <QSlider>
 #include <QGroupBox>
 #include <QMouseEvent>
+#include <QResizeEvent>
 
 // Includes Gráficos
 #include <QGraphicsView>
@@ -136,8 +139,8 @@ GameCard::GameCard(int id, QString nome, QString colorHex, QWidget* parent)
     QStringList extensoes = { ".jpg", ".png", ".jpeg", ".webp" };
     QString caminhoEncontrado = "";
 
-    // IMPORTANTE: Verifique se este caminho existe no seu PC
-    QString pastaBase = "D:/UFG/25-2/AED2/Gameboxd/dados/imagens/";
+    // Pega a pasta onde o .exe está rodando e adiciona /dados/imagens/
+    QString pastaBase = QCoreApplication::applicationDirPath() + "/../../Gameboxd/dados/imagens/";
 
     for (const QString& ext : extensoes) {
         QString tentativa = pastaBase + QString::number(id) + ext;
@@ -245,19 +248,32 @@ MatchDialog::MatchDialog(const Jogo& jogo, Grafo* g, QWidget* parent)
     setupLayout->addWidget(cbHost);
 
     // Slider
-    QLabel* lblVagas = new QLabel("Tamanho do Grupo: 4", this);
-    QSlider* sliderVagas = new QSlider(Qt::Horizontal, this);
-    // Configura o slider baseado no min/max players do jogo!
+    // 1. Calcula os limites reais do jogo
     int minP = jogo.getMinPlayers();
     int maxP = jogo.getMaxPlayers();
-    // Garante limites seguros (MST precisa de pelo menos 2)
-    if (minP < 2) minP = 2;
-    sliderVagas->setRange(minP, maxP);
-    sliderVagas->setValue(maxP > 4 ? 4 : maxP);
 
+    // Segurança: MST precisa de pelo menos 2 pessoas (Host + 1)
+    if (minP < 2) minP = 2;
+    if (maxP < minP) maxP = minP; // Garante que max nunca é menor que min
+
+    // 2. Define o valor inicial inteligente
+    // Tenta ser 4 (mesa ideal), mas se o jogo só aceita 2 (Netrunner), vira 2.
+    int valorInicial = 4;
+    if (valorInicial > maxP) valorInicial = maxP;
+    if (valorInicial < minP) valorInicial = minP;
+
+    // 3. Cria a Label já com o valor correto
+    QLabel* lblVagas = new QLabel("Tamanho do Grupo: " + QString::number(valorInicial), this);
+
+    QSlider* sliderVagas = new QSlider(Qt::Horizontal, this);
+    sliderVagas->setRange(minP, maxP);
+    sliderVagas->setValue(valorInicial);
+
+    // Conecta para atualizar o texto ao mover
     connect(sliderVagas, &QSlider::valueChanged, [lblVagas](int val){
         lblVagas->setText("Tamanho do Grupo: " + QString::number(val));
     });
+
     setupLayout->addWidget(lblVagas);
     setupLayout->addWidget(sliderVagas);
 
@@ -322,8 +338,21 @@ MatchDialog::MatchDialog(const Jogo& jogo, Grafo* g, QWidget* parent)
     };
 
     // Linha 1: Jogadores e Tempo
-    addInfo("👥", "Jogadores", QString("%1-%2").arg(jogo.getMinPlayers()).arg(jogo.getMaxPlayers()), 0, 0);
-    addInfo("⏳", "Tempo", QString("%1-%2 m").arg(jogo.getMinTime()).arg(jogo.getMaxTime()), 0, 1);
+    QString txtPlayers;
+    if (jogo.getMinPlayers() == jogo.getMaxPlayers()) {
+        txtPlayers = QString::number(jogo.getMinPlayers()); // Ex: "2"
+    } else {
+        txtPlayers = QString("%1-%2").arg(jogo.getMinPlayers()).arg(jogo.getMaxPlayers()); // Ex: "2-4"
+    }
+    addInfo("👥", "Jogadores", txtPlayers, 0, 0);
+
+    QString txtTime;
+    if (jogo.getMinTime() == jogo.getMaxTime()) {
+        txtTime = QString("%1 min").arg(jogo.getMinTime()); // Ex: "30 m"
+    } else {
+        txtTime = QString("%1-%2 min").arg(jogo.getMinTime()).arg(jogo.getMaxTime()); // Ex: "30-60 m"
+    }
+    addInfo("⏳", "Tempo", txtTime, 0, 1);
 
     // Linha 2: Idade e Nota
     addInfo("🎂", "Idade", QString("%1+").arg(jogo.getMinAge()), 1, 0);
@@ -384,7 +413,7 @@ MatchDialog::MatchDialog(const Jogo& jogo, Grafo* g, QWidget* parent)
         for(const Usuario& u : party) {
             QString txt = u.getNome();
             if (u.getId() == hostId) txt += " [HOST]";
-            else txt += QString(" (Afinidade: %1)").arg(g->calcularAfinidade(hostUser, u));
+            else txt += QString(" (Afinidade: %1%)").arg(g->calcularAfinidade(hostUser, u));
             resultList->addItem(txt);
         }
         resultList->addItem("\n" + g->gerarMST(party));
@@ -470,7 +499,12 @@ MainWindow::MainWindow(QWidget *parent)
     grafoSistema = new Grafo();
 
     // 1. CARREGAR USUÁRIOS
-    QFile fileUser("D:/UFG/25-2/AED2/Gameboxd/dados/users.json");
+    QString pathUsers = QCoreApplication::applicationDirPath() + "/../../Gameboxd/dados/users.json";
+    QFile fileUser(pathUsers);
+    if (!fileUser.exists()) {
+        qDebug() << "ERRO CRÍTICO: Arquivo de usuarios nao encontrado em:" << pathUsers;
+    }
+
     if (fileUser.open(QIODevice::ReadOnly)) {
         QJsonDocument doc = QJsonDocument::fromJson(fileUser.readAll());
         QJsonArray arr = doc.array();
@@ -532,7 +566,11 @@ MainWindow::MainWindow(QWidget *parent)
     comboSort->addItem("Melhor Avaliação (Rating)");
 
     // Conecta a mudança do combo à função de reordenar
-    connect(comboSort, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &MainWindow::atualizarGrid);
+    // Usamos um Lambda para resetar a variável m_lastCols antes de chamar a função
+    connect(comboSort, QOverload<int>::of(&QComboBox::currentIndexChanged), [this](int){
+        m_lastCols = -1; // Força o redesenho ignorando a otimização
+        atualizarGrid();
+    });
 
     // Montagem do Cabeçalho: [Spacer] [Botão Malha] [Spacer] [Label] [Combo]
     headerLayout->addStretch();           // Empurra para o centro
@@ -551,49 +589,54 @@ MainWindow::MainWindow(QWidget *parent)
 
 
     // --- 5. CARREGAR JOGOS ---
-        QFile fileGame("D:/UFG/25-2/AED2/Gameboxd/dados/games.json");
-        if (fileGame.open(QIODevice::ReadOnly)) {
-            QJsonDocument doc = QJsonDocument::fromJson(fileGame.readAll());
-            QJsonArray arr = doc.array();
-            for(const auto& val : arr) {
-                QJsonObject obj = val.toObject();
+    QString pathGames = QCoreApplication::applicationDirPath() + "/../../Gameboxd/dados/games.json";
+    QFile fileGame(pathGames);
 
-                int id = obj["id"].toInt();
-                QString titulo = obj["title"].toString();
-                int minP = obj["minplayers"].toInt();
-                int maxP = obj["maxplayers"].toInt();
-                int rank = obj["rank"].toInt();
-                if (rank == 0) rank = 99999;
-                int ano = obj["year"].toInt();
+    if (!fileGame.exists()) {
+        qDebug() << "ERRO CRÍTICO: Arquivo de games nao encontrado em:" << pathGames;
+    }
+    if (fileGame.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(fileGame.readAll());
+        QJsonArray arr = doc.array();
+        for(const auto& val : arr) {
+            QJsonObject obj = val.toObject();
 
-                // Novos Campos
-                int minTime = obj["minplaytime"].toInt();
-                int maxTime = obj["maxplaytime"].toInt();
-                int minAge = obj["minage"].toInt();
+            int id = obj["id"].toInt();
+            QString titulo = obj["title"].toString();
+            int minP = obj["minplayers"].toInt();
+            int maxP = obj["maxplayers"].toInt();
+            int rank = obj["rank"].toInt();
+            if (rank == 0) rank = 99999;
+            int ano = obj["year"].toInt();
 
-                double nota = 0.0;
-                int reviews = 0;
+            // Novos Campos
+            int minTime = obj["minplaytime"].toInt();
+            int maxTime = obj["maxplaytime"].toInt();
+            int minAge = obj["minage"].toInt();
 
-                if (obj.contains("rating")) {
-                    QJsonObject ratingObj = obj["rating"].toObject();
-                    nota = ratingObj["rating"].toDouble();
-                    reviews = ratingObj["num_of_reviews"].toInt();
-                }
+            double nota = 0.0;
+            int reviews = 0;
 
-                // Cria o objeto com tudo do bd
-                Jogo j(id, titulo, minP, maxP, rank, ano, nota, minTime, maxTime, minAge, reviews);
-
-                // Ler categorias
-                QJsonObject typesObj = obj["types"].toObject();
-                QJsonArray catArray = typesObj["categories"].toArray();
-                for(auto c : catArray) {
-                     j.adicionarCategoria(c.toObject()["id"].toInt());
-                }
-
-                listaJogos.push_back(j);
+            if (obj.contains("rating")) {
+                QJsonObject ratingObj = obj["rating"].toObject();
+                nota = ratingObj["rating"].toDouble();
+                reviews = ratingObj["num_of_reviews"].toInt();
             }
-            fileGame.close();
+
+            // Cria o objeto com tudo do bd
+            Jogo j(id, titulo, minP, maxP, rank, ano, nota, minTime, maxTime, minAge, reviews);
+
+            // Ler categorias
+            QJsonObject typesObj = obj["types"].toObject();
+            QJsonArray catArray = typesObj["categories"].toArray();
+            for(auto c : catArray) {
+                 j.adicionarCategoria(c.toObject()["id"].toInt());
+            }
+
+            listaJogos.push_back(j);
         }
+        fileGame.close();
+    }
 
     // Ordena inicialmente por Nome e desenha
     atualizarGrid();
@@ -617,46 +660,69 @@ void MainWindow::abrirMatch(int id, QString nome) {
     }
 }
 
-// --- FUNÇÃO NOVA: REDESENHA O GRID ---
+// --- REDESENHA O GRID --- (front da janela principal)
 void MainWindow::atualizarGrid() {
-    // 1. Limpar o Grid Atual (Remove e deleta os cards antigos)
+    // 1. Cálculo Matemático de Colunas (Responsividade)
+    // Largura do Card (140 largura + margens do layout) ~ 160px a 170px
+    int cardWidth = 320;
+
+    // Largura disponível na janela (subtraímos ~60px para margens laterais e barra de rolagem)
+    int availableWidth = this->width() - 80;
+
+    // Quantas colunas cabem?
+    int maxCols = availableWidth / cardWidth;
+
+    // Segurança: Mínimo 1 coluna, Máximo 8
+    if (maxCols < 1) maxCols = 1;
+    if (maxCols > 6) maxCols = 6;
+
+    // OTIMIZAÇÃO (Para não travar ao arrastar a janela)
+    if (maxCols == m_lastCols && !gridLayoutJogos->isEmpty()) {
+        return;
+    }
+
+    // Atualiza o estado atual
+    m_lastCols = maxCols;
+
+    // 3. Limpar o Grid Atual
     QLayoutItem *child;
     while ((child = gridLayoutJogos->takeAt(0)) != 0) {
         if (child->widget()) {
-            delete child->widget(); // Deleta o GameCard
+            child->widget()->hide(); // Esconde antes de deletar para evitar flicker visual
+            delete child->widget();
         }
         delete child;
     }
 
-    // 2. Ordenar a Lista
+    // 4. Ordenar a Lista
     int criterio = comboSort->currentIndex();
 
-    // Uso std::sort com funções Lambda para comparar
     if (criterio == 0) { // Nome (A-Z)
         std::sort(listaJogos.begin(), listaJogos.end(), [](const Jogo& a, const Jogo& b){
             return a.getTitulo() < b.getTitulo();
         });
     }
-    else if (criterio == 1) { // Ano (Mais novos primeiro)
+    else if (criterio == 1) { // Ano
         std::sort(listaJogos.begin(), listaJogos.end(), [](const Jogo& a, const Jogo& b){
-            return a.getAno() < b.getAno(); // '<' faz ficar crescente
+            return a.getAno() < b.getAno();
         });
     }
-    else if (criterio == 2) { // Rating (Maiores notas primeiro)
+    else if (criterio == 2) { // Rating
         std::sort(listaJogos.begin(), listaJogos.end(), [](const Jogo& a, const Jogo& b){
-            return a.getRating() > b.getRating(); // '>' põe nota 9.0 antes de 5.0
+            return a.getRating() > b.getRating();
         });
     }
 
-    // 3. Redesenhar os Cards
+    // 5. Redesenhar os Cards (Usando maxCols dinâmico)
     int row = 0;
     int col = 0;
-    int maxCols = 5;
 
     for (const Jogo& jogo : listaJogos) {
         GameCard* card = new GameCard(jogo.getId(), jogo.getTitulo(), gerarCorPeloId(jogo.getId()));
         connect(card, &GameCard::clicked, this, &MainWindow::abrirMatch);
-        gridLayoutJogos->addWidget(card, row, col);
+
+        // Qt::AlignCenter ajuda o card a ficar bonito na célula
+        gridLayoutJogos->addWidget(card, row, col, Qt::AlignCenter);
 
         col++;
         if (col >= maxCols) {
@@ -664,4 +730,13 @@ void MainWindow::atualizarGrid() {
             row++;
         }
     }
+}
+
+// Função para responsividade da janela
+void MainWindow::resizeEvent(QResizeEvent* event) {
+    // Chama a implementação padrão primeiro
+    QMainWindow::resizeEvent(event);
+
+    // Chama nossa função para recalcular o grid
+    atualizarGrid();
 }

@@ -43,17 +43,20 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+
 public slots:
     void abrirMatch(int id, QString nome);
-    void atualizarGrid(); // NOVO: Função para redesenhar os cards
 
 private:
     Grafo* grafoSistema;
-
-    // NOVO: Variáveis que precisam ficar vivas na classe
     QVector<Jogo> listaJogos;
     QGridLayout* gridLayoutJogos;
     QComboBox* comboSort;
+
+    void atualizarGrid();
+    int m_lastCols = -1;
 };
 
 #endif // MAINWINDOW_H

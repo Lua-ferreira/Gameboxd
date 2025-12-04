@@ -8,8 +8,10 @@
 #include <QComboBox>
 #include <QPushButton>
 #include <QMouseEvent>
+#include <QGridLayout> // Adicionado
 #include "grafo.h"
 #include "usuario.h"
+#include "jogo.h"      // Adicionado
 
 // --- CLASSE AUXILIAR: CARD DO JOGO ---
 class GameCard : public QWidget {
@@ -17,7 +19,6 @@ class GameCard : public QWidget {
 public:
     int gameId;
     QString title;
-
     GameCard(int id, QString nome, QString colorHex, QWidget* parent = nullptr);
 
 signals:
@@ -44,9 +45,15 @@ public:
 
 public slots:
     void abrirMatch(int id, QString nome);
+    void atualizarGrid(); // NOVO: Função para redesenhar os cards
 
 private:
-    Grafo* grafoSistema; // Instância principal do Grafo
+    Grafo* grafoSistema;
+
+    // NOVO: Variáveis que precisam ficar vivas na classe
+    QVector<Jogo> listaJogos;
+    QGridLayout* gridLayoutJogos;
+    QComboBox* comboSort;
 };
 
 #endif // MAINWINDOW_H

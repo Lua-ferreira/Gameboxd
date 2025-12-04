@@ -25,4 +25,5 @@ HEADERS += \
 # ele não copia o arquivo automaticamente para a pasta do executável.
 DISTFILES += \
     dados/games.json \
-    dados/users.json
+    dados/users.json \
+    dados/imagens/

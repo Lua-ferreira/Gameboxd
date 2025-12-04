@@ -2,22 +2,26 @@
 #define JOGO_H
 
 #include <QString>
-#include <QVector>
 #include <QSet>
 
 class Jogo {
 public:
     Jogo();
-    Jogo(int id, QString titulo, int minP, int maxP, int rank);
 
-    // Getters
+    // Construtor ATUALIZADO (recebe tudo: antigo + novos campos)
+    Jogo(int id, QString titulo, int minP, int maxP, int rank, int ano, double rating);
+
+    // Getters antigos
     int getId() const;
     QString getTitulo() const;
     int getMinPlayers() const;
     int getMaxPlayers() const;
-    int getRank() const; // Usaremos o rank para destacar jogos melhores
+    int getRank() const;
 
-    // Para a lógica de grafo depois
+    // NOVOS Getters
+    int getAno() const;
+    double getRating() const;
+
     void adicionarCategoria(int catId);
     QSet<int> getCategorias() const;
 
@@ -27,7 +31,12 @@ private:
     int minPlayers;
     int maxPlayers;
     int rank;
-    QSet<int> categoriasIds; // IDs das categorias (ex: 1010 = Fantasy)
+
+    // Novos campos privados
+    int ano;
+    double rating;
+
+    QSet<int> categoriasIds;
 };
 
 #endif // JOGO_H

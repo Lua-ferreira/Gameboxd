@@ -99,7 +99,7 @@ public:
 
                     QGraphicsLineItem* line = scene->addLine(p1.x(), p1.y(), p2.x(), p2.y());
 
-                    int alpha = qMin(255, peso * 2);
+                    int alpha = qMin(255, peso * 3);
                     int width = (peso > 70) ? 3 : 1;
                     QColor corLinha = (peso > 80) ? QColor(46, 204, 113, alpha) : QColor(255, 255, 255, alpha);
 
@@ -190,193 +190,271 @@ void GameCard::mousePressEvent(QMouseEvent* event) {
 }
 
 // =========================================================
-// MATCH DIALOG COM VISUALIZADOR DE SUBGRAFO
+// MATCH DIALOG
 // =========================================================
-MatchDialog::MatchDialog(int gameId, QString gameName, Grafo* g, QWidget* parent)
+MatchDialog::MatchDialog(const Jogo& jogo, Grafo* g, QWidget* parent)
     : QDialog(parent) {
 
-    setWindowTitle("Montar Mesa - " + gameName);
-    resize(900, 600); // Aumentei a largura para caber o gráfico
+    setWindowTitle("Detalhes & Mesa - " + jogo.getTitulo());
+    resize(1000, 650);
     setStyleSheet("background-color: #2b2b2b; color: white;");
 
-    // LAYOUT PRINCIPAL (Horizontal: Esquerda = Controles, Direita = Gráfico)
     QHBoxLayout* mainLayout = new QHBoxLayout(this);
 
-    // --- COLUNA DA ESQUERDA (Controles e Lista) ---
+    // --- COLUNA ESQUERDA ---
     QWidget* leftWidget = new QWidget(this);
     QVBoxLayout* leftLayout = new QVBoxLayout(leftWidget);
+    //leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setAlignment(Qt::AlignTop);
     leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(10);
 
-    // 1. Cabeçalho
-    QLabel* header = new QLabel("Organizador (Host):", this);
-    header->setStyleSheet("font-size: 14px; font-weight: bold; color: #f1c40f;");
-    leftLayout->addWidget(header);
+    // Título do Jogo
+    QLabel* titleLabel = new QLabel(jogo.getTitulo(), this);
+    titleLabel->setStyleSheet("font-size: 22px; font-weight: bold; color: #ecf0f1;");
+    titleLabel->setWordWrap(true);
+    titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    titleLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+    leftLayout->addWidget(titleLabel);
 
-    // 2. Seleção de Host
+    // Ano e Rank
+    //QLabel* subTitle = new QLabel(QString("%1 • Rank #%2").arg(jogo.getAno()).arg(jogo.getRank()), this);
+    //subTitle->setStyleSheet("font-size: 14px; color: #bdc3c7; margin-bottom: 15px;");
+    //leftLayout->addWidget(subTitle);
+
+    // --- ÁREA DE MONTAGEM DE MESA ---
+    QGroupBox* groupSetup = new QGroupBox("Montar Mesa (Matchmaking)", this);
+    groupSetup->setStyleSheet("QGroupBox { border: 1px solid #444; border-radius: 5px; margin-top: 5px; padding-top: 15px; font-weight: bold;}");
+    QVBoxLayout* setupLayout = new QVBoxLayout(groupSetup);
+
+    // Host
+    setupLayout->addWidget(new QLabel("Quem convida (Host):"));
     QComboBox* cbHost = new QComboBox(this);
     cbHost->setStyleSheet("padding: 5px; background-color: #444; border: 1px solid #666;");
-    QVector<Usuario> possiveisHosts = g->buscarCandidatos(gameId);
+    QVector<Usuario> possiveisHosts = g->buscarCandidatos(jogo.getId());
     if (possiveisHosts.isEmpty()) {
-        cbHost->addItem("Ninguém disponível", "");
+        cbHost->addItem("Ninguém avaliou este jogo com nota >= 3", "");
         cbHost->setEnabled(false);
     } else {
         for(const Usuario& u : possiveisHosts) {
-            cbHost->addItem(u.getNome(), u.getId());
+            // Mostra nome e a nota que a pessoa deu pro jogo
+            int nota = u.getAvaliacao(jogo.getId());
+            cbHost->addItem(QString("%1 (Nota: %2/5)").arg(u.getNome()).arg(nota), u.getId());
         }
     }
-    leftLayout->addWidget(cbHost);
+    setupLayout->addWidget(cbHost);
 
-    // 3. Slider
-    QGroupBox* filterBox = new QGroupBox("Tamanho do Grupo", this);
-    filterBox->setStyleSheet("QGroupBox { border: 1px solid #555; border-radius: 5px; margin-top: 10px; color: white; }");
-    QVBoxLayout* filterLayout = new QVBoxLayout(filterBox);
-
-    QLabel* lblVagas = new QLabel("Pessoas: 4", this);
+    // Slider
+    QLabel* lblVagas = new QLabel("Tamanho do Grupo: 4", this);
     QSlider* sliderVagas = new QSlider(Qt::Horizontal, this);
-    sliderVagas->setRange(2, 6);
-    sliderVagas->setValue(4);
+    // Configura o slider baseado no min/max players do jogo!
+    int minP = jogo.getMinPlayers();
+    int maxP = jogo.getMaxPlayers();
+    // Garante limites seguros (MST precisa de pelo menos 2)
+    if (minP < 2) minP = 2;
+    sliderVagas->setRange(minP, maxP);
+    sliderVagas->setValue(maxP > 4 ? 4 : maxP);
+
     connect(sliderVagas, &QSlider::valueChanged, [lblVagas](int val){
-        lblVagas->setText("Pessoas: " + QString::number(val));
+        lblVagas->setText("Tamanho do Grupo: " + QString::number(val));
     });
-    filterLayout->addWidget(lblVagas);
-    filterLayout->addWidget(sliderVagas);
-    leftLayout->addWidget(filterBox);
+    setupLayout->addWidget(lblVagas);
+    setupLayout->addWidget(sliderVagas);
 
-    // 4. Botão
-    QPushButton* btnMatch = new QPushButton("🎲 Formar Grupo", this);
-    btnMatch->setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 10px; border-radius: 5px; margin-top: 10px;");
+    // Botão
+    QPushButton* btnMatch = new QPushButton("🎲 Gerar Melhor Grupo (MST)", this);
+    btnMatch->setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 10px; border-radius: 5px; margin-top: 5px;");
     btnMatch->setCursor(Qt::PointingHandCursor);
-    leftLayout->addWidget(btnMatch);
+    setupLayout->addWidget(btnMatch);
 
-    // 5. Lista de Texto
+    leftLayout->addWidget(groupSetup);
+
+    // Lista de Resultados
     QListWidget* resultList = new QListWidget(this);
     resultList->setStyleSheet("background-color: #1a1a1a; border: 1px solid #333; color: #ecf0f1; margin-top: 10px;");
+    //resultList->setFixedHeight(150);
+    resultList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     leftLayout->addWidget(resultList);
 
-    // Adiciona a coluna da esquerda no layout principal
-    mainLayout->addWidget(leftWidget, 1); // Peso 1 (menor)
+
+    // --- PAINEL DE INFORMAÇÕES DO JOGO ---
+    QFrame* infoFrame = new QFrame(this);
+    infoFrame->setStyleSheet("background-color: #222; border-radius: 6px; border: 1px solid #333;");
+    infoFrame->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Maximum);
+
+    QGridLayout* infoLayout = new QGridLayout(infoFrame);
+    infoLayout->setSpacing(5); // Espaço menor entre as células do grid
+    infoLayout->setContentsMargins(10, 8, 10, 8); // Margens internas apertadas
+
+    // Função auxiliar otimizada para ocupar menos espaço vertical
+    auto addInfo = [&](QString icone, QString titulo, QString valor, int r, int c) {
+        // Container do item (Ícone + Textos)
+        QWidget* itemWidget = new QWidget();
+        QHBoxLayout* hLayout = new QHBoxLayout(itemWidget);
+        hLayout->setContentsMargins(0, 0, 0, 0);
+        hLayout->setSpacing(8);
+
+        // Ícone
+        QLabel* lblIcon = new QLabel(icone);
+        lblIcon->setStyleSheet("font-size: 16px; background: transparent; border: none;");
+        lblIcon->setFixedWidth(20);
+
+        // Container de Texto (Título e Valor colados)
+        QWidget* textWidget = new QWidget();
+        QVBoxLayout* vLayout = new QVBoxLayout(textWidget);
+        vLayout->setContentsMargins(0, 0, 0, 0);
+        vLayout->setSpacing(0); // <--- ZERAR O ESPAÇO ENTRE TITULO E VALOR
+
+        QLabel* lblTitle = new QLabel(titulo);
+        lblTitle->setStyleSheet("color: #888; font-size: 10px; background: transparent; border: none;");
+
+        QLabel* lblValue = new QLabel(valor);
+        lblValue->setStyleSheet("color: #eee; font-weight: bold; font-size: 12px; background: transparent; border: none;");
+
+        vLayout->addWidget(lblTitle);
+        vLayout->addWidget(lblValue);
+
+        hLayout->addWidget(lblIcon);
+        hLayout->addWidget(textWidget);
+        hLayout->addStretch(); // Empurra para a esquerda
+
+        infoLayout->addWidget(itemWidget, r, c);
+    };
+
+    // Linha 1: Jogadores e Tempo
+    addInfo("👥", "Jogadores", QString("%1-%2").arg(jogo.getMinPlayers()).arg(jogo.getMaxPlayers()), 0, 0);
+    addInfo("⏳", "Tempo", QString("%1-%2 m").arg(jogo.getMinTime()).arg(jogo.getMaxTime()), 0, 1);
+
+    // Linha 2: Idade e Nota
+    addInfo("🎂", "Idade", QString("%1+").arg(jogo.getMinAge()), 1, 0);
+    addInfo("⭐", "Nota", QString::number(jogo.getRating(), 'f', 1), 1, 1);
+
+    // Linha 3: Rodapé (Reviews e Ano)
+    QString reviewsText = QString::number(jogo.getNumReviews());
+    if (jogo.getNumReviews() > 1000) {
+        reviewsText = QString::number(jogo.getNumReviews() / 1000.0, 'f', 1) + "k";
+    }
+
+    QLabel* lblExtra = new QLabel(QString("Lançado em %1 • %2 reviews")
+                                  .arg(jogo.getAno()).arg(reviewsText), this);
+    lblExtra->setStyleSheet("color: #666; font-size: 9px; font-style: italic; margin-top: 2px; background: transparent; border: none;");
+    lblExtra->setAlignment(Qt::AlignCenter);
+    infoLayout->addWidget(lblExtra, 2, 0, 1, 2); // Ocupa 2 colunas
+
+    // Adiciona o painel ao layout da esquerda
+    leftLayout->addWidget(infoFrame);
+
+    // Adiciona um espaço elástico no final para empurrar tudo para o topo
+    //leftLayout->addStretch();
+
+    // Adiciona a coluna esquerda ao layout principal (35% da largura)
+    mainLayout->addWidget(leftWidget, 35);
 
 
-    // --- COLUNA DA DIREITA (Visualização Gráfica) ---
+    // --- COLUNA DIREITA (GRÁFICO) ---
     QGraphicsScene* scene = new QGraphicsScene(this);
     QGraphicsView* view = new QGraphicsView(scene, this);
     view->setRenderHint(QPainter::Antialiasing);
     view->setStyleSheet("border: 1px solid #444; background-color: #1e1e1e; border-radius: 5px;");
+    mainLayout->addWidget(view, 65); // 65% da largura
 
-    mainLayout->addWidget(view, 2); // Peso 2 (maior, ocupa mais espaço)
 
-
-    // --- LÓGICA DO BOTÃO ---
-    connect(btnMatch, &QPushButton::clicked, [resultList, scene, g, gameId, sliderVagas, cbHost]() {
-        // A. Limpeza
+    // --- CONECTA O BOTÃO ---
+    connect(btnMatch, &QPushButton::clicked, [resultList, scene, g, jogo, sliderVagas, cbHost]() {
         resultList->clear();
         scene->clear();
 
         QString hostId = cbHost->currentData().toString();
-        if (hostId.isEmpty()) return;
+        if (hostId.isEmpty()) {
+            resultList->addItem("Selecione um Host válido.");
+            return;
+        }
 
         int tamanho = sliderVagas->value();
-
-        // B. Algoritmo
-        QVector<Usuario> party = g->formarParty(hostId, gameId, tamanho);
+        QVector<Usuario> party = g->formarParty(hostId, jogo.getId(), tamanho);
         Usuario hostUser = g->getUsuario(hostId);
 
         if (party.size() < 2) {
-             resultList->addItem("Jogadores insuficientes.");
+             resultList->addItem("Não há conexões suficientes.");
              return;
         }
 
-        // C. Atualiza Lista (Texto)
-        resultList->addItem(QString("=== PARTY (%1/%2) ===").arg(party.size()).arg(tamanho));
+        // Texto
+        resultList->addItem(QString("=== GRUPO (%1/%2) ===").arg(party.size()).arg(tamanho));
         for(const Usuario& u : party) {
-            QString texto = u.getNome();
-            if (u.getId() == hostId) texto += " [HOST]";
-            else texto += " (" + QString::number(g->calcularAfinidade(hostUser, u)) + "%)";
-            resultList->addItem(texto);
+            QString txt = u.getNome();
+            if (u.getId() == hostId) txt += " [HOST]";
+            else txt += QString(" (Afinidade: %1)").arg(g->calcularAfinidade(hostUser, u));
+            resultList->addItem(txt);
         }
-        resultList->addItem("\n=== MST TEXTO ===");
-        resultList->addItem(g->gerarMST(party));
+        resultList->addItem("\n" + g->gerarMST(party));
 
-        // D. ATUALIZA GRÁFICO (O SUBGRAFO)
+        // --- DESENHO GRÁFICO ---
         int n = party.size();
-        double raio = 120.0;
-        double centroX = 0;
-        double centroY = 0;
+        double raio = 150.0;
         double anguloPasso = 2 * M_PI / n;
+        QMap<QString, QPointF> pos;
 
-        // Mapa para guardar posições das bolinhas
-        QMap<QString, QPointF> posicoes;
-
-        // 1. Desenhar Nós (Pessoas)
+        // 1. Bolinhas (Nós)
         for (int i = 0; i < n; ++i) {
             Usuario u = party[i];
+            double ang = i * anguloPasso;
+            double x = raio * qCos(ang);
+            double y = raio * qSin(ang);
+            pos[u.getId()] = QPointF(x, y);
 
-            // Distribui em circulo
-            double angulo = i * anguloPasso;
-            double x = centroX + raio * qCos(angulo);
-            double y = centroY + raio * qSin(angulo);
-            posicoes[u.getId()] = QPointF(x, y);
+            QColor cor = (u.getId() == hostId) ? QColor("#f1c40f") : QColor("#3498db");
 
-            // Cor: Dourado para Host, Azul para outros
-            QColor corNode = (u.getId() == hostId) ? QColor("#f1c40f") : QColor("#3498db");
+            QGraphicsEllipseItem* node = scene->addEllipse(x-20, y-20, 40, 40, QPen(Qt::white, 2), QBrush(cor));
+            node->setZValue(10);
 
-            double nodeSize = 40;
-            QGraphicsEllipseItem* node = scene->addEllipse(x - nodeSize/2, y - nodeSize/2, nodeSize, nodeSize);
-            node->setBrush(QBrush(corNode));
-            node->setPen(QPen(Qt::white, 2));
-            node->setZValue(10); // Fica na frente das linhas
-
-            // Nome
-            QGraphicsTextItem* text = scene->addText(u.getNome().split(" ").first()); // Só o primeiro nome
-            text->setDefaultTextColor(Qt::white);
-            text->setPos(x - 15, y - 35);
+            QGraphicsTextItem* t = scene->addText(u.getNome().split(" ")[0]);
+            t->setDefaultTextColor(Qt::white);
+            t->setPos(x-15, y-35);
         }
 
-        // 2. Desenhar Linhas (Conexões)
-        // Vamos desenhar TODAS as conexões entre eles para ver a densidade do grupo
+        // 2. Linhas (Arestas)
+        qDebug() << "--- DESENHANDO ARESTAS ---";
         for (int i = 0; i < n; ++i) {
             for (int j = i + 1; j < n; ++j) {
-                Usuario u1 = party[i];
-                Usuario u2 = party[j];
+                // Calcula afinidade
+                int peso = g->calcularAfinidade(party[i], party[j]);
 
-                int afinidade = g->calcularAfinidade(u1, u2);
+                // Debug: Veja na aba "Application Output" se os números aparecem
+                qDebug() << "Conexão" << party[i].getNome() << "e" << party[j].getNome() << "=" << peso;
 
-                // Desenha linha se tiver afinidade mínima visual
-                // Mais grosso e mais verde quanto maior a afinidade
-                if (afinidade > 20) {
-                    QPointF p1 = posicoes[u1.getId()];
-                    QPointF p2 = posicoes[u2.getId()];
+                // Desenha se tiver MÍNIMO de conexão (ex: 10 pontos)
+                // Se peso for baixo, desenha cinza. Se alto, verde.
+                if (peso > 10) {
+                    QPointF p1 = pos[party[i].getId()];
+                    QPointF p2 = pos[party[j].getId()];
 
-                    QGraphicsLineItem* line = scene->addLine(p1.x(), p1.y(), p2.x(), p2.y());
+                    QGraphicsLineItem* l = scene->addLine(p1.x(), p1.y(), p2.x(), p2.y());
 
-                    int largura = (afinidade > 40) ? 3 : 1;
-                    int alpha = (afinidade * 2.5); // Transparência baseada na nota
-                    if (alpha > 255) alpha = 255;
+                    QColor corLinha;
+                    int espessura;
 
-                    QColor corLinha = QColor(0, 255, 127, alpha); // Verde Primavera
-                    line->setPen(QPen(corLinha, largura));
-                    line->setZValue(0); // Atrás das bolinhas
-
-                    // (Opcional) Mostrar número na linha
-                    if (afinidade > 40) {
-                        QGraphicsTextItem* labelPeso = scene->addText(QString::number(afinidade));
-                        labelPeso->setDefaultTextColor(QColor(200, 200, 200));
-                        labelPeso->setPos((p1 + p2) / 2); // Meio da linha
-                        labelPeso->setScale(0.8);
+                    if (peso > 70) {
+                        corLinha = QColor("#2ecc71"); // Verde Forte
+                        espessura = 3;
+                    } else if (peso > 40) {
+                        corLinha = QColor("#f1c40f"); // Amarelo
+                        espessura = 2;
+                    } else {
+                        corLinha = QColor("#7f8c8d"); // Cinza
+                        espessura = 1;
                     }
+
+                    l->setPen(QPen(corLinha, espessura));
+                    l->setZValue(0);
                 }
             }
         }
-
-        // Ajusta a câmera para focar no desenho
         scene->setSceneRect(-200, -200, 400, 400);
     });
 
     QPushButton* btnClose = new QPushButton("Fechar", this);
-    btnClose->setStyleSheet("background-color: #555; padding: 5px;");
     connect(btnClose, &QPushButton::clicked, this, &QDialog::accept);
-
-    // O botão fechar fica na esquerda, embaixo da lista
     leftLayout->addWidget(btnClose);
 }
 
@@ -446,7 +524,7 @@ MainWindow::MainWindow(QWidget *parent)
     lblSort->setStyleSheet("color: white; font-weight: bold; margin-left: 20px;");
 
     comboSort = new QComboBox(this);
-    comboSort->setFixedWidth(200); // Aumentei um pouco
+    comboSort->setFixedWidth(200);
     comboSort->setStyleSheet("padding: 5px; background-color: #333; color: white; border: 1px solid #555;");
 
     comboSort->addItem("Nome (A-Z)");
@@ -473,38 +551,49 @@ MainWindow::MainWindow(QWidget *parent)
 
 
     // --- 5. CARREGAR JOGOS ---
-    // Nota: 'listaJogos' agora é variável da classe (está no .h)
-    QFile fileGame("D:/UFG/25-2/AED2/Gameboxd/dados/games.json");
-    if (fileGame.open(QIODevice::ReadOnly)) {
-        QJsonDocument doc = QJsonDocument::fromJson(fileGame.readAll());
-        QJsonArray arr = doc.array();
-        for(const auto& val : arr) {
-            QJsonObject obj = val.toObject();
+        QFile fileGame("D:/UFG/25-2/AED2/Gameboxd/dados/games.json");
+        if (fileGame.open(QIODevice::ReadOnly)) {
+            QJsonDocument doc = QJsonDocument::fromJson(fileGame.readAll());
+            QJsonArray arr = doc.array();
+            for(const auto& val : arr) {
+                QJsonObject obj = val.toObject();
 
-            // 1. Pegar dados básicos
-            int id = obj["id"].toInt();
-            QString titulo = obj["title"].toString();
-            int minP = obj["minplayers"].toInt(); // Pegar do JSON
-            int maxP = obj["maxplayers"].toInt(); // Pegar do JSON
-            int rank = obj["rank"].toInt();
-            if (rank == 0) rank = 99999;
+                int id = obj["id"].toInt();
+                QString titulo = obj["title"].toString();
+                int minP = obj["minplayers"].toInt();
+                int maxP = obj["maxplayers"].toInt();
+                int rank = obj["rank"].toInt();
+                if (rank == 0) rank = 99999;
+                int ano = obj["year"].toInt();
 
-            // 2. Pegar Ano
-            int ano = obj["year"].toInt();
+                // Novos Campos
+                int minTime = obj["minplaytime"].toInt();
+                int maxTime = obj["maxplaytime"].toInt();
+                int minAge = obj["minage"].toInt();
 
-            // 3. Pegar Rating
-            double nota = 0.0;
-            if (obj.contains("rating")) {
-                QJsonObject ratingObj = obj["rating"].toObject();
-                nota = ratingObj["rating"].toDouble();
+                double nota = 0.0;
+                int reviews = 0;
+
+                if (obj.contains("rating")) {
+                    QJsonObject ratingObj = obj["rating"].toObject();
+                    nota = ratingObj["rating"].toDouble();
+                    reviews = ratingObj["num_of_reviews"].toInt();
+                }
+
+                // Cria o objeto com tudo do bd
+                Jogo j(id, titulo, minP, maxP, rank, ano, nota, minTime, maxTime, minAge, reviews);
+
+                // Ler categorias
+                QJsonObject typesObj = obj["types"].toObject();
+                QJsonArray catArray = typesObj["categories"].toArray();
+                for(auto c : catArray) {
+                     j.adicionarCategoria(c.toObject()["id"].toInt());
+                }
+
+                listaJogos.push_back(j);
             }
-
-            // Cria o objeto com os novos dados
-            Jogo j(id, titulo, minP, maxP, rank, ano, nota);
-            listaJogos.push_back(j);
+            fileGame.close();
         }
-        fileGame.close();
-    }
 
     // Ordena inicialmente por Nome e desenha
     atualizarGrid();
@@ -518,8 +607,14 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::abrirMatch(int id, QString nome) {
-    MatchDialog dialog(id, nome, grafoSistema, this);
-    dialog.exec();
+    // Procura o jogo na lista pelo ID
+    for (const Jogo& j : listaJogos) {
+        if (j.getId() == id) {
+            MatchDialog dialog(j, grafoSistema, this); // Passa o objeto Jogo
+            dialog.exec();
+            return;
+        }
+    }
 }
 
 // --- FUNÇÃO NOVA: REDESENHA O GRID ---
@@ -544,7 +639,7 @@ void MainWindow::atualizarGrid() {
     }
     else if (criterio == 1) { // Ano (Mais novos primeiro)
         std::sort(listaJogos.begin(), listaJogos.end(), [](const Jogo& a, const Jogo& b){
-            return a.getAno() > b.getAno(); // '>' faz ficar decrescente (2023 antes de 2010)
+            return a.getAno() < b.getAno(); // '<' faz ficar crescente
         });
     }
     else if (criterio == 2) { // Rating (Maiores notas primeiro)

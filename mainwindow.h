@@ -32,7 +32,7 @@ protected:
 class MatchDialog : public QDialog {
     Q_OBJECT
 public:
-    MatchDialog(int gameId, QString gameName, Grafo* g, QWidget* parent = nullptr);
+    MatchDialog(const Jogo& jogo, Grafo* g, QWidget* parent = nullptr);
 };
 
 // --- CLASSE PRINCIPAL ---

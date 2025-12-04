@@ -7,20 +7,23 @@
 class Jogo {
 public:
     Jogo();
+    // Construtor atualizado com todos os campos
+    Jogo(int id, QString titulo, int minP, int maxP, int rank, int ano, double rating,
+         int minTime, int maxTime, int minAge, int numReviews);
 
-    // Construtor ATUALIZADO (recebe tudo: antigo + novos campos)
-    Jogo(int id, QString titulo, int minP, int maxP, int rank, int ano, double rating);
-
-    // Getters antigos
     int getId() const;
     QString getTitulo() const;
     int getMinPlayers() const;
     int getMaxPlayers() const;
     int getRank() const;
-
-    // NOVOS Getters
     int getAno() const;
     double getRating() const;
+
+    // Novos Getters
+    int getMinTime() const;
+    int getMaxTime() const;
+    int getMinAge() const;
+    int getNumReviews() const;
 
     void adicionarCategoria(int catId);
     QSet<int> getCategorias() const;
@@ -31,10 +34,14 @@ private:
     int minPlayers;
     int maxPlayers;
     int rank;
-
-    // Novos campos privados
     int ano;
     double rating;
+
+    // Novos Campos
+    int minTime;
+    int maxTime;
+    int minAge;
+    int numReviews;
 
     QSet<int> categoriasIds;
 };
